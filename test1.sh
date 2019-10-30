@@ -14,8 +14,11 @@ password="admin"
 NUM_OF_THREADS=0
 NUM_OF_VIRTUAL_SERVER=0
 
-MAX_THREADS=10
-MAX_THREAD_PER_SERVER=5
+MAX_THREADS=0
+MAX_THREAD_PER_SERVER=10
+
+NUM_OF_SERVERS_ARE_RUNNING=0
+MIN_SERVERS=2
 
 
 ### next port if start-server
@@ -29,12 +32,20 @@ SOURCE_PATH="/home/tuhalang/Documents/"
 
 ### folder of virtual server
 VIRTUAL_PATH="/home/tuhalang/Documents/virtual-"
+rm -rf $VIRTUAL_PATH*
 
 getNumOfThread(){
+    NUM_OF_SERVERS_ARE_RUNNING=0
+    NUM_OF_THREADS=0
+    MAX_THREADS=0
     for port in "${PORTS_RUNNING[@]}"; do
         num=$(curl --noproxy "*" --user $username:$password http://localhost:$port/manager/jmxproxy?qry=java.lang:type=Threading | grep '\bThreadCount\b')
         num=$(sed -e 's/[[:space:]]*$//' <<<${num:13})
-        NUM_OF_THREADS=`expr $num + $NUM_OF_THREADS - 35`
+        if (( $num > 0 )); then
+            NUM_OF_SERVERS_ARE_RUNNING=`expr $NUM_OF_SERVERS_ARE_RUNNING + 1`
+            NUM_OF_THREADS=`expr $num + $NUM_OF_THREADS - 35`
+            MAX_THREADS=`expr $MAX_THREAD_PER_SERVER + $MAX_THREADS`
+        fi
     done
 }
 
@@ -98,7 +109,7 @@ deletePort(){
 }
 
 undeploy(){
-    if (( $NUM_OF_VIRTUAL_SERVER > 0 )); then
+    if (( $NUM_OF_SERVERS_ARE_RUNNING > $MIN_SERVERS )); then
                
         # decrement port
         START=`expr $START - 1`
@@ -123,11 +134,11 @@ undeploy(){
 
 
 while true; do
-    NUM_OF_THREADS=0
     getNumOfThread
-    echo $NUM_OF_THREADS
-    echo $MAX_THREADS
-    if (( $NUM_OF_THREADS > $MAX_THREADS )); then
+    echo "Current threads: $NUM_OF_THREADS"
+    echo "Max threads: $MAX_THREADS"
+    echo "Servers are running: $NUM_OF_SERVERS_ARE_RUNNING"
+    if [[ $NUM_OF_THREADS -ge $MAX_THREADS ]] || (( $NUM_OF_SERVERS_ARE_RUNNING < $MIN_SERVERS)); then
         deploy
     elif (( $NUM_OF_THREADS < ($MAX_THREADS - $MAX_THREAD_PER_SERVER - $MAX_THREAD_PER_SERVER) )); then
         undeploy
